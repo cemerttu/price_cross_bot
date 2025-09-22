@@ -12,15 +12,24 @@ class RSIStrategy:
 
     def on_price(self, price):
         self.prices.append(price)
+
+        # ✅ Keep only last needed candles for speed
+        max_len = max(self.period, self.slow_period) + 5
+        if len(self.prices) > max_len:
+            self.prices = self.prices[-max_len:]
+
         signals = []
 
+        # Not enough data yet
         if len(self.prices) < max(self.period, self.slow_period):
             return signals
 
+        # Indicators
         last_rsi = rsi(self.prices, self.period)[-1]
         fast_ema = ema(self.prices, self.fast_period)[-1]
         slow_ema = ema(self.prices, self.slow_period)[-1]
 
+        # Trading Rules (unchanged ✅)
         if last_rsi < self.oversold and fast_ema > slow_ema and self.position != "LONG":
             self.position = "LONG"
             signals.append(
