@@ -1,11 +1,19 @@
 import pandas as pd
 
 def ema(prices, period=14):
+    """Exponential Moving Average (EMA)."""
+    if len(prices) < period:
+        return [None] * len(prices)
+    
     if not isinstance(prices, pd.Series):
         prices = pd.Series(prices)
     return prices.ewm(span=period, adjust=False).mean().tolist()
 
 def rsi(prices, period=14):
+    """Relative Strength Index (RSI)."""
+    if len(prices) < period:
+        return [50] * len(prices)
+    
     if not isinstance(prices, pd.Series):
         prices = pd.Series(prices)
 
@@ -18,5 +26,4 @@ def rsi(prices, period=14):
 
     rs = avg_gain / avg_loss
     rsi_series = 100 - (100 / (1 + rs))
-
     return rsi_series.fillna(50).tolist()
