@@ -1,13 +1,11 @@
 import pandas as pd
 
 def ema(prices, period=14):
-    """Exponential Moving Average (EMA)."""
     if not isinstance(prices, pd.Series):
         prices = pd.Series(prices)
     return prices.ewm(span=period, adjust=False).mean().tolist()
 
 def rsi(prices, period=14):
-    """Relative Strength Index (RSI)."""
     if not isinstance(prices, pd.Series):
         prices = pd.Series(prices)
 
