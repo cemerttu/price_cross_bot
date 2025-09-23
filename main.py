@@ -13,8 +13,8 @@ def main():
     
     # Initialize strategy
     if STRATEGY_CHOICE.upper() == "EMA":
-        strategy = EMAStrategy(fast_period=5, slow_period=10)  # Shorter periods for 1-sec analysis
-        print("🎯 Using EMA Strategy (5,10)")
+        strategy = EMAStrategy(fast_period=12, slow_period=26)
+        print("🎯 Using EMA Strategy (12,26)")
     else:
         strategy = RSIStrategy(period=14, overbought=70, oversold=30)
         print("🎯 Using RSI Strategy (14,70,30)")

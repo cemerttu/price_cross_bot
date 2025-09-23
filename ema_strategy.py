@@ -3,7 +3,7 @@ from indicators import ema, get_all_indicators
 from bot import PriceCrossBot
 
 class EMAStrategy:
-    def __init__(self, fast_period: int = 9, slow_period: int = 21):
+    def __init__(self, fast_period: int = 12, slow_period: int = 26):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.prices = []
@@ -26,7 +26,7 @@ class EMAStrategy:
         # Get additional indicators for analysis
         indicators = get_all_indicators(self.prices)
         
-        # Enhanced trading logic with multiple conditions
+        # Trading logic
         if (fast_ema > slow_ema and 
             self.position != "LONG" and 
             len(self.prices) > 30):  # Ensure enough data
