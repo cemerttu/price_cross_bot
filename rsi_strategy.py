@@ -1,43 +1,73 @@
-from indicators import rsi, ema
-from datetime import datetime
+from typing import List, Dict, Any
+from indicators import rsi, get_all_indicators
+from bot import PriceCrossBot
 
 class RSIStrategy:
-    def __init__(self, period=10, overbought=65, oversold=35, fast_period=5, slow_period=10):
-        # Adjusted for 1-minute timeframe
+    def __init__(self, period: int = 14, overbought: int = 70, oversold: int = 30):
         self.period = period
         self.overbought = overbought
         self.oversold = oversold
-        self.fast_period = fast_period
-        self.slow_period = slow_period
         self.prices = []
         self.position = None
-        self.signal_count = 0
+        self.bot = PriceCrossBot()
+        self.signal_history = []
 
-    def on_price(self, price):
+    def on_price(self, price: float, prev_price: float = None) -> List[str]:
+        """Process new price and return trading signals"""
         self.prices.append(price)
         signals = []
 
-        min_data = max(self.period, self.slow_period)
-        if len(self.prices) < min_data:
-            print(f"📊 [{len(self.prices)}/{min_data}] Collecting 1-min data...")
-            return signals
+        if len(self.prices) < self.period:
+            return signals  # Not enough data yet
 
-        last_rsi = rsi(self.prices, self.period)[-1]
-        fast_ema = ema(self.prices, self.fast_period)[-1]
-        slow_ema = ema(self.prices, self.slow_period)[-1]
+        # Calculate RSI
+        current_rsi = rsi(self.prices, self.period)[-1]
         
-        current_time = datetime.now().strftime("%H:%M:%S")
-        print(f"📈 {current_time} - RSI({self.period}): {last_rsi:.1f}, EMA Diff: {fast_ema-slow_ema:.5f}")
-
-        # Trading Rules optimized for 1-minute
-        if last_rsi < self.oversold and fast_ema > slow_ema and self.position != "LONG":
+        # Get additional indicators for confirmation
+        indicators = get_all_indicators(self.prices)
+        
+        # Enhanced RSI strategy with confirmation
+        if (current_rsi < self.oversold and 
+            self.position != "LONG" and 
+            len(self.prices) > 20):  # Additional confirmation
+            
             self.position = "LONG"
-            self.signal_count += 1
-            signals.append(f"🟢 BUY #{self.signal_count} (RSI {last_rsi:.1f} < {self.oversold} on 1-min)")
+            signal_msg = f"🟢 BUY | RSI ({current_rsi:.2f}) < Oversold ({self.oversold})"
+            signals.append(signal_msg)
+            
+            # Log the trade
+            trade_log = self.bot.log_trade("BUY", price, {
+                "rsi": current_rsi,
+                "ema_12": indicators.get("ema_12", 0),
+                "ema_26": indicators.get("ema_26", 0)
+            })
+            self.signal_history.append(trade_log)
 
-        elif last_rsi > self.overbought and fast_ema < slow_ema and self.position != "SHORT":
+        elif (current_rsi > self.overbought and 
+              self.position != "SHORT" and 
+              len(self.prices) > 20):
+            
             self.position = "SHORT"
-            self.signal_count += 1
-            signals.append(f"🔴 SELL #{self.signal_count} (RSI {last_rsi:.1f} > {self.overbought} on 1-min)")
+            signal_msg = f"🔴 SELL | RSI ({current_rsi:.2f}) > Overbought ({self.overbought})"
+            signals.append(signal_msg)
+            
+            # Log the trade
+            trade_log = self.bot.log_trade("SELL", price, {
+                "rsi": current_rsi,
+                "ema_12": indicators.get("ema_12", 0),
+                "ema_26": indicators.get("ema_26", 0)
+            })
+            self.signal_history.append(trade_log)
 
         return signals
+
+    def get_strategy_stats(self) -> Dict[str, Any]:
+        """Get strategy performance statistics"""
+        return {
+            "rsi_period": self.period,
+            "overbought": self.overbought,
+            "oversold": self.oversold,
+            "current_position": self.position,
+            "total_signals": len(self.signal_history),
+            "data_points": len(self.prices)
+        }

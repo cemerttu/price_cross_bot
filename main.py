@@ -1,56 +1,85 @@
-from data import stream_prices
-from rsi_strategy import RSIStrategy
-from ema_strategy import EMAStrategy
+import time
 from datetime import datetime
+from data import stream_prices, get_historical_data
+from ema_strategy import EMAStrategy
+from rsi_strategy import RSIStrategy
+from indicators import get_all_indicators
 
-print("🔄 1-MINUTE TRADING BOT STARTING...")
-print("=" * 55)
-print("⏰ Each analysis cycle: 1 minute")
-print("💹 Timeframe: 1-minute charts")
-print("📊 Strategy optimized for short-term trading")
-print("=" * 55)
+def main():
+    # Configuration
+    SYMBOL = "EURUSD=X"
+    INTERVAL = 1  # 1-second intervals
+    STRATEGY_CHOICE = "EMA"  # Choose "EMA" or "RSI"
+    
+    # Initialize strategy
+    if STRATEGY_CHOICE.upper() == "EMA":
+        strategy = EMAStrategy(fast_period=5, slow_period=10)  # Shorter periods for 1-sec analysis
+        print("🎯 Using EMA Strategy (5,10)")
+    else:
+        strategy = RSIStrategy(period=14, overbought=70, oversold=30)
+        print("🎯 Using RSI Strategy (14,70,30)")
+    
+    print(f"🚀 Starting High-Frequency Trading Bot")
+    print(f"📈 Symbol: {SYMBOL}")
+    print(f"⏱️  Interval: {INTERVAL} second(s)")
+    print(f"📊 Data collection and analysis active...")
+    print("Press Ctrl+C to stop\n")
+    
+    # Get some initial historical data for better indicator calculation
+    print("📥 Loading initial historical data...")
+    historical_data = get_historical_data(SYMBOL, period="1d", interval="1m")
+    if historical_data is not None:
+        initial_prices = historical_data['Close'].tolist()[-50:]  # Last 50 prices
+        for price in initial_prices:
+            strategy.prices.append(price)
+        print(f"✅ Loaded {len(initial_prices)} historical prices")
+    
+    try:
+        signal_count = 0
+        price_count = 0
+        
+        for prev_price, current_price in stream_prices(SYMBOL, INTERVAL):
+            price_count += 1
+            
+            # Process price through strategy
+            signals = strategy.on_price(current_price, prev_price)
+            
+            # Print signals immediately
+            for signal in signals:
+                signal_count += 1
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                print(f"[{timestamp}] {signal}")
+            
+            # Print status every 30 seconds
+            if price_count % 30 == 0:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                stats = strategy.get_strategy_stats()
+                print(f"\n📈 Status Update [{timestamp}]")
+                print(f"💰 Current Price: {current_price:.5f}")
+                print(f"📊 Prices Collected: {stats['data_points']}")
+                print(f"🎯 Signals Generated: {stats['total_signals']}")
+                print(f"⚡ Current Position: {stats['current_position'] or 'None'}")
+                
+                # Show indicator values if we have enough data
+                if len(strategy.prices) >= 26:
+                    indicators = get_all_indicators(strategy.prices)
+                    print(f"📊 RSI: {indicators.get('rsi', 0):.2f}")
+                    print(f"📊 EMA12: {indicators.get('ema_12', 0):.5f}")
+                    print(f"📊 EMA26: {indicators.get('ema_26', 0):.5f}")
+                print()
+                
+    except KeyboardInterrupt:
+        print(f"\n\n🛑 Trading bot stopped by user.")
+        
+        # Final statistics
+        stats = strategy.get_strategy_stats()
+        print("\n📊 FINAL STATISTICS:")
+        print(f"Total prices processed: {stats['data_points']}")
+        print(f"Total signals generated: {stats['total_signals']}")
+        print(f"Final position: {stats['current_position']}")
+        
+    except Exception as e:
+        print(f"\n❌ Error in main loop: {e}")
 
-# ✅ Choose strategy at runtime
-print("1-Minute Strategy Options:")
-print("1. RSI+EMA Strategy (RSI < 35 + EMA Bullish) - More conservative")
-print("2. EMA Only Strategy (Faster signals) - Recommended for 1-min")
-
-choice = input("Select strategy (1 or 2): ").strip()
-
-if choice == "1":
-    strategy = RSIStrategy(period=10, overbought=65, oversold=35, fast_period=5, slow_period=10)
-    print("✅ Using RSI+EMA Strategy (1-minute timeframe)")
-    print("⏳ Needs 10 prices (10 minutes) to start...")
-elif choice == "2":
-    strategy = EMAStrategy(fast_period=5, slow_period=10)
-    print("✅ Using EMA Strategy (1-minute timeframe)") 
-    print("⏳ Needs 10 prices (10 minutes) to start...")
-else:
-    print("⚠️ Invalid choice, defaulting to EMA Strategy")
-    strategy = EMAStrategy(fast_period=5, slow_period=10)
-    print("⏳ Needs 10 prices (10 minutes) to start...")
-
-print("=" * 55)
-print("🚀 Starting 1-minute trading cycle... (Ctrl+C to stop)")
-print("=" * 55)
-
-try:
-    # 1-minute intervals (60 seconds)
-    for prev_price, price in stream_prices("EURUSD=X", interval=60):
-        if price is None:
-            continue
-
-        signals = strategy.on_price(price)
-        for sig in signals:
-            current_time = datetime.now().strftime("%H:%M:%S")
-            print("🎯" * 10)
-            print(f"🚀 {current_time} - 1-MINUTE SIGNAL: {sig}")
-            print("💡 Based on 1-minute price action")
-            print("🎯" * 10)
-            print()
-
-except KeyboardInterrupt:
-    print(f"\n🛑 1-minute bot stopped. Total signals: {strategy.signal_count}")
-    print(f"⏰ Average signals per hour: {strategy.signal_count}")
-except Exception as e:
-    print(f"\n❌ Error: {e}")
+if __name__ == "__main__":
+    main()
