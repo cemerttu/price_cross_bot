@@ -1,85 +1,57 @@
-import time
 from datetime import datetime
-from data import stream_prices, get_historical_data
 from ema_strategy import EMAStrategy
 from rsi_strategy import RSIStrategy
+from data import load_csv_prices, get_historical_data, stream_prices
 from indicators import get_all_indicators
 
 def main():
-    # Configuration
     SYMBOL = "EURUSD=X"
-    INTERVAL = 1  # 1-second intervals
-    STRATEGY_CHOICE = "EMA"  # Choose "EMA" or "RSI"
-    
+    INTERVAL = 1          # 1-second
+    STRATEGY_CHOICE = "EMA"  # "EMA" or "RSI"
+    USE_CSV = True
+    CSV_FILE = "EURUSD_1min.csv"
+
     # Initialize strategy
-    if STRATEGY_CHOICE.upper() == "EMA":
-        strategy = EMAStrategy(fast_period=5, slow_period=10)  # Shorter periods for 1-sec analysis
-        print("🎯 Using EMA Strategy (5,10)")
+    strategy = EMAStrategy(fast_period=5, slow_period=10) if STRATEGY_CHOICE.upper() == "EMA" else RSIStrategy()
+    print(f"🎯 Using {STRATEGY_CHOICE.upper()} Strategy")
+
+    # Load prices
+    if USE_CSV:
+        csv_prices = load_csv_prices(CSV_FILE)
+        if csv_prices:
+            for p in csv_prices:
+                strategy.prices.append(p)
+            print(f"✅ Loaded {len(csv_prices)} prices from CSV")
     else:
-        strategy = RSIStrategy(period=14, overbought=70, oversold=30)
-        print("🎯 Using RSI Strategy (14,70,30)")
-    
-    print(f"🚀 Starting High-Frequency Trading Bot")
-    print(f"📈 Symbol: {SYMBOL}")
-    print(f"⏱️  Interval: {INTERVAL} second(s)")
-    print(f"📊 Data collection and analysis active...")
-    print("Press Ctrl+C to stop\n")
-    
-    # Get some initial historical data for better indicator calculation
-    print("📥 Loading initial historical data...")
-    historical_data = get_historical_data(SYMBOL, period="1d", interval="1m")
-    if historical_data is not None:
-        initial_prices = historical_data['Close'].tolist()[-50:]  # Last 50 prices
-        for price in initial_prices:
-            strategy.prices.append(price)
-        print(f"✅ Loaded {len(initial_prices)} historical prices")
-    
+        hist = get_historical_data(SYMBOL, period="1d", interval="1m")
+        if hist is not None:
+            for p in hist['Close'].tolist()[-50:]:
+                strategy.prices.append(p)
+            print(f"✅ Loaded {len(strategy.prices)} prices from Yahoo")
+
+    # Run backtest or live stream
     try:
-        signal_count = 0
-        price_count = 0
-        
-        for prev_price, current_price in stream_prices(SYMBOL, INTERVAL):
-            price_count += 1
-            
-            # Process price through strategy
-            signals = strategy.on_price(current_price, prev_price)
-            
-            # Print signals immediately
-            for signal in signals:
-                signal_count += 1
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                print(f"[{timestamp}] {signal}")
-            
-            # Print status every 30 seconds
-            if price_count % 30 == 0:
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                stats = strategy.get_strategy_stats()
-                print(f"\n📈 Status Update [{timestamp}]")
-                print(f"💰 Current Price: {current_price:.5f}")
-                print(f"📊 Prices Collected: {stats['data_points']}")
-                print(f"🎯 Signals Generated: {stats['total_signals']}")
-                print(f"⚡ Current Position: {stats['current_position'] or 'None'}")
-                
-                # Show indicator values if we have enough data
-                if len(strategy.prices) >= 26:
-                    indicators = get_all_indicators(strategy.prices)
-                    print(f"📊 RSI: {indicators.get('rsi', 0):.2f}")
-                    print(f"📊 EMA12: {indicators.get('ema_12', 0):.5f}")
-                    print(f"📊 EMA26: {indicators.get('ema_26', 0):.5f}")
-                print()
-                
+        if USE_CSV and csv_prices:
+            print("📊 Running backtest on CSV...")
+            for i in range(1, len(csv_prices)):
+                prev_price = csv_prices[i-1]
+                current_price = csv_prices[i]
+                signals = strategy.on_price(current_price, prev_price)
+                for s in signals:
+                    print(f"[{i}] {s}")
+            print("✅ Backtest complete")
+        else:
+            print("🚀 Starting live streaming...")
+            for prev_price, price in stream_prices(SYMBOL, INTERVAL):
+                signals = strategy.on_price(price, prev_price)
+                for s in signals:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    print(f"[{timestamp}] {s}")
     except KeyboardInterrupt:
-        print(f"\n\n🛑 Trading bot stopped by user.")
-        
-        # Final statistics
+        print("🛑 Bot stopped by user")
+    finally:
         stats = strategy.get_strategy_stats()
-        print("\n📊 FINAL STATISTICS:")
-        print(f"Total prices processed: {stats['data_points']}")
-        print(f"Total signals generated: {stats['total_signals']}")
-        print(f"Final position: {stats['current_position']}")
-        
-    except Exception as e:
-        print(f"\n❌ Error in main loop: {e}")
+        print(f"\n📊 FINAL STATS: {stats}")
 
 if __name__ == "__main__":
     main()
