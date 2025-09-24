@@ -1,8 +1,8 @@
-# risk_manager.py
+# risk_manager.py - FIXED VERSION
 import csv
 from datetime import datetime
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 @dataclass
 class Trade:
@@ -27,10 +27,49 @@ class RiskManager:
         self.closed_trades: List[Trade] = []
         self.account_balance = 10000.0  # Starting balance
         self.equity_curve = []
+        self.pnl_file = "pnl_tracking.csv"
         
+        # Initialize PnL CSV
+        self._init_pnl_csv()
+    
+    def _init_pnl_csv(self):
+        """Initialize PnL tracking CSV with headers"""
+        try:
+            with open(self.pnl_file, mode='w', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=[
+                    "entry_time", "exit_time", "signal", "entry_price", "exit_price", 
+                    "quantity", "pnl", "pnl_percent", "status"
+                ])
+                writer.writeheader()
+        except Exception as e:
+            print(f"Error initializing PnL CSV: {e}")
+    
+    def _log_pnl(self, trade: Trade):
+        """Log closed trade to PnL CSV"""
+        try:
+            with open(self.pnl_file, mode='a', newline='') as file:
+                writer = csv.DictWriter(file, fieldnames=[
+                    "entry_time", "exit_time", "signal", "entry_price", "exit_price", 
+                    "quantity", "pnl", "pnl_percent", "status"
+                ])
+                
+                trade_dict = {
+                    "entry_time": trade.entry_time,
+                    "exit_time": trade.exit_time or "",
+                    "signal": trade.signal,
+                    "entry_price": round(trade.entry_price, 5),
+                    "exit_price": round(trade.exit_price, 5) if trade.exit_price else "",
+                    "quantity": round(trade.quantity, 2),
+                    "pnl": round(trade.pnl, 2) if trade.pnl else "",
+                    "pnl_percent": round(trade.pnl_percent, 2) if trade.pnl_percent else "",
+                    "status": trade.status
+                }
+                writer.writerow(trade_dict)
+        except Exception as e:
+            print(f"Error logging PnL: {e}")
+    
     def calculate_position_size(self, entry_price: float) -> float:
         risk_amount = self.account_balance * self.risk_per_trade
-        pip_value = 10  # Standard lot pip value for EUR/USD
         position_size = risk_amount / (self.stop_loss_pips * 10000)
         return min(position_size, self.account_balance * 0.1)  # Max 10% of account
     
@@ -65,20 +104,27 @@ class RiskManager:
         closed_trades = []
         
         for trade in self.open_trades[:]:
+            should_close = False
+            close_reason = ""
+            
             if trade.signal == "BUY":
                 if current_price <= trade.stop_loss:
-                    self.close_trade(trade, current_price, "STOP_LOSS")
-                    closed_trades.append(trade)
+                    should_close = True
+                    close_reason = "STOP_LOSS"
                 elif current_price >= trade.take_profit:
-                    self.close_trade(trade, current_price, "TAKE_PROFIT")
-                    closed_trades.append(trade)
+                    should_close = True
+                    close_reason = "TAKE_PROFIT"
             else:  # SELL
                 if current_price >= trade.stop_loss:
-                    self.close_trade(trade, current_price, "STOP_LOSS")
-                    closed_trades.append(trade)
+                    should_close = True
+                    close_reason = "STOP_LOSS"
                 elif current_price <= trade.take_profit:
-                    self.close_trade(trade, current_price, "TAKE_PROFIT")
-                    closed_trades.append(trade)
+                    should_close = True
+                    close_reason = "TAKE_PROFIT"
+            
+            if should_close:
+                self.close_trade(trade, current_price, close_reason)
+                closed_trades.append(trade)
                     
         return closed_trades
     
@@ -99,6 +145,9 @@ class RiskManager:
         self.account_balance += trade.pnl
         self.equity_curve.append(self.account_balance)
         
+        # Log to PnL CSV
+        self._log_pnl(trade)
+        
         self.open_trades.remove(trade)
         self.closed_trades.append(trade)
     
@@ -112,15 +161,20 @@ class RiskManager:
         total_pnl = sum(t.pnl for t in self.closed_trades if t.pnl)
         win_rate = len(winning_trades) / len(self.closed_trades) * 100 if self.closed_trades else 0
         
+        avg_win = sum(t.pnl for t in winning_trades) / len(winning_trades) if winning_trades else 0
+        avg_loss = sum(t.pnl for t in losing_trades) / len(losing_trades) if losing_trades else 0
+        
         return {
             "total_trades": len(self.closed_trades),
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),
-            "win_rate": win_rate,
-            "total_pnl": total_pnl,
-            "account_balance": self.account_balance,
-            "profit_factor": abs(sum(t.pnl for t in winning_trades)) / abs(sum(t.pnl for t in losing_trades)) if losing_trades else float('inf'),
-            "max_drawdown": self.calculate_max_drawdown()
+            "win_rate": round(win_rate, 2),
+            "total_pnl": round(total_pnl, 2),
+            "account_balance": round(self.account_balance, 2),
+            "profit_factor": abs(avg_win / avg_loss) if avg_loss != 0 else float('inf'),
+            "max_drawdown": round(self.calculate_max_drawdown(), 2),
+            "avg_win": round(avg_win, 2),
+            "avg_loss": round(avg_loss, 2)
         }
     
     def calculate_max_drawdown(self) -> float:

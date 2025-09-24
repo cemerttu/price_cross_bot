@@ -1,4 +1,4 @@
-# enhanced_strategy.py
+# enhanced_strategy.py - FIXED VERSION
 from typing import List, Dict, Any
 from bot import PriceCrossBot
 from indicators import ema, rsi, get_all_indicators
@@ -19,12 +19,15 @@ class EnhancedStrategy:
         self.prices.append(price)
         signals = []
 
-        # Check exit conditions first
+        # Check exit conditions first (STOP LOSS / TAKE PROFIT)
         closed_trades = self.risk_manager.check_exit_conditions(price)
         for trade in closed_trades:
-            signals.append(f"🔒 CLOSED {trade.signal} | PnL: ${trade.pnl:.2f} ({trade.pnl_percent:.2f}%) | {trade.status}")
+            signal_msg = f"🔒 CLOSED {trade.signal} | PnL: ${trade.pnl:.2f} ({trade.pnl_percent:.2f}%) | {trade.status}"
+            signals.append(signal_msg)
+            # Update position when trade closes
+            self.position = None
 
-        if len(self.prices) < max(self.slow_period, self.rsi_period):
+        if len(self.prices) < max(self.slow_period, self.rsi_period) + 1:
             return signals
 
         # Get all indicators
@@ -33,77 +36,45 @@ class EnhancedStrategy:
         current_rsi = rsi(self.prices, self.rsi_period)[-1]
         indicators = get_all_indicators(self.prices)
 
-        # Combined strategy logic
+        # Trading logic
         ema_bullish = fast_ema > slow_ema
         ema_bearish = fast_ema < slow_ema
         rsi_oversold = current_rsi < 30
         rsi_overbought = current_rsi > 70
-        rsi_neutral = 30 <= current_rsi <= 70
 
-        # ENTRY SIGNALS with confirmation
-        if (ema_bullish and rsi_oversold) and self.position != "LONG":
-            # Strong buy signal: EMA bullish + RSI oversold (reversal)
-            self.position = "LONG"
-            trade = self.risk_manager.open_trade("BUY", price)
-            msg = f"🟢 STRONG BUY | EMA Bullish + RSI Oversold ({current_rsi:.1f})"
-            signals.append(msg)
-            self.signal_history.append(
-                self.bot.log_trade("BUY", price, {
-                    "fast_ema": fast_ema, 
-                    "slow_ema": slow_ema, 
-                    "rsi": current_rsi,
-                    "stop_loss": trade.stop_loss,
-                    "take_profit": trade.take_profit
-                })
-            )
+        # ENTRY SIGNALS - Only enter if no position is open
+        if self.position is None:
+            if ema_bullish and (rsi_oversold or current_rsi < 50):
+                # Buy signal
+                self.position = "LONG"
+                trade = self.risk_manager.open_trade("BUY", price)
+                msg = f"🟢 BUY | EMA Bullish + RSI {current_rsi:.1f}"
+                signals.append(msg)
+                self.signal_history.append(
+                    self.bot.log_trade("BUY", price, {
+                        "fast_ema": fast_ema, 
+                        "slow_ema": slow_ema, 
+                        "rsi": current_rsi,
+                        "stop_loss": trade.stop_loss,
+                        "take_profit": trade.take_profit
+                    })
+                )
 
-        elif (ema_bearish and rsi_overbought) and self.position != "SHORT":
-            # Strong sell signal: EMA bearish + RSI overbought (reversal)
-            self.position = "SHORT"
-            trade = self.risk_manager.open_trade("SELL", price)
-            msg = f"🔴 STRONG SELL | EMA Bearish + RSI Overbought ({current_rsi:.1f})"
-            signals.append(msg)
-            self.signal_history.append(
-                self.bot.log_trade("SELL", price, {
-                    "fast_ema": fast_ema, 
-                    "slow_ema": slow_ema, 
-                    "rsi": current_rsi,
-                    "stop_loss": trade.stop_loss,
-                    "take_profit": trade.take_profit
-                })
-            )
-
-        elif (ema_bullish and rsi_neutral) and self.position != "LONG":
-            # Moderate buy signal: EMA bullish + RSI neutral (trend following)
-            self.position = "LONG"
-            trade = self.risk_manager.open_trade("BUY", price)
-            msg = f"🟡 MODERATE BUY | EMA Bullish + RSI Neutral ({current_rsi:.1f})"
-            signals.append(msg)
-            self.signal_history.append(
-                self.bot.log_trade("BUY", price, {
-                    "fast_ema": fast_ema, 
-                    "slow_ema": slow_ema, 
-                    "rsi": current_rsi,
-                    "stop_loss": trade.stop_loss,
-                    "take_profit": trade.take_profit
-                })
-            )
-
-        elif (ema_bearish and rsi_neutral) and self.position != "SHORT":
-            # Moderate sell signal: EMA bearish + RSI neutral (trend following)
-            self.position = "SHORT"
-            trade = self.risk_manager.open_trade("SELL", price)
-            msg = f"🟡 MODERATE SELL | EMA Bearish + RSI Neutral ({current_rsi:.1f})"
-            signals.append(msg)
-            self.signal_history.append(
-                self.bot.log_trade("SELL", price, {
-                    "fast_ema": fast_ema, 
-                    "slow_ema": slow_ema, 
-                    "rsi": current_rsi,
-                    "stop_loss": trade.stop_loss,
-                    "take_profit": trade.take_profit
-                })
-            )
+            elif ema_bearish and (rsi_overbought or current_rsi > 50):
+                # Sell signal
+                self.position = "SHORT"
+                trade = self.risk_manager.open_trade("SELL", price)
+                msg = f"🔴 SELL | EMA Bearish + RSI {current_rsi:.1f}"
+                signals.append(msg)
+                self.signal_history.append(
+                    self.bot.log_trade("SELL", price, {
+                        "fast_ema": fast_ema, 
+                        "slow_ema": slow_ema, 
+                        "rsi": current_rsi,
+                        "stop_loss": trade.stop_loss,
+                        "take_profit": trade.take_profit
+                    })
+                )
 
         return signals
 
