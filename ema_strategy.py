@@ -1,6 +1,6 @@
 from typing import List, Dict
-from bot import PriceCrossBot
-from indicators import ema, get_all_indicators
+from .bot import PriceCrossBot
+from .indicators import ema, get_all_indicators
 
 class EMAStrategy:
     def __init__(self, fast_period: int = 13, slow_period: int = 20):
